@@ -1,5 +1,3 @@
-enable_testing()
-
 set(TEST_FILES basics.cpp mem.cpp graphviz.cpp reductions.cpp)
 # vcall.cpp
 # loop.cpp
