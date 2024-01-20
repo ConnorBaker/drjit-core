@@ -70,11 +70,37 @@ if (NOT APPLE)
 endif()
 
 # ----------------------------------------------------------
-#  Build the nanothread library
+#  Find or build the dependencies
 # ----------------------------------------------------------
 
-add_subdirectory(ext/nanothread)
-mark_as_advanced(NANOTHREAD_ENABLE_TESTS)
+find_package(nanothread)
+if (NOT nanothread_FOUND)
+  add_subdirectory(ext/nanothread)
+  mark_as_advanced(NANOTHREAD_ENABLE_TESTS)
+endif()
+
+find_package(PkgConfig)
+if (PkgConfig_FOUND)
+  pkg_check_modules(lz4 liblz4 IMPORTED_TARGET)
+  add_library(lz4 ALIAS PkgConfig::lz4)
+endif()
+if(NOT lz4_FOUND)
+  add_library(lz4 ext/lz4/lz4.c)
+  target_include_directories(lz4 PUBLIC ext/lz4)
+endif()
+
+find_package(xxHash)
+if (NOT xxHash_FOUND)
+  add_library(xxhash ext/lz4/xxhash.c)
+  target_include_directories(xxhash PUBLIC ext/lz4)
+
+  add_library(xxHash::xxhash ALIAS xxhash)
+endif()
+
+find_package(tsl-robin-map)
+if (NOT tsl-robin-map_FOUND)
+  add_subdirectory(ext/robin_map)
+endif()
 
 # ----------------------------------------------------------
 #  Build Dr.Jit-Core
@@ -139,21 +165,14 @@ add_library(
   src/init.cpp
   src/api.cpp
 
-  # LZ4 compression library & XXHash hash function
-  ext/lz4/lz4.h ext/lz4/lz4.c
-  ext/lz4/xxhash.h ext/lz4/xxh3.h ext/lz4/xxhash.c
-
   # Precompiled kernels in compressed PTX format
   resources/kernels.h resources/kernels.c
 )
 
 target_compile_features(drjit-core PUBLIC cxx_std_17)
 
-target_include_directories(drjit-core PRIVATE
-  ext/nanothread/include
-  ext/robin_map/include
-  ext/lz4
-)
+# Link against the dependencies
+target_link_libraries(drjit-core PRIVATE nanothread tsl::robin_map lz4 xxHash::xxhash)
 
 if (MSVC)
   # Conditional expression is constant (a few in robin_hash.h)
@@ -178,7 +197,7 @@ target_compile_definitions(drjit-core PRIVATE -DLZ4LIB_VISIBILITY=)
 target_include_directories(drjit-core
   PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+  $<INSTALL_INTERFACE:include>)
 
 target_compile_definitions(drjit-core PRIVATE -DDRJIT_BUILD=1)
 target_link_libraries(drjit-core PRIVATE nanothread)
@@ -237,3 +256,12 @@ set_target_properties(drjit-core PROPERTIES INTERPROCEDURAL_OPTIMIZATION_DEBUG  
 if (DRJIT_CORE_ENABLE_TESTS)
   add_subdirectory(tests)
 endif()
+
+configure_file(drjit-core-config.cmake "${CMAKE_CURRENT_BINARY_DIR}/drjit-core/drjit-core-config.cmake")
+install(TARGETS drjit-core EXPORT drjit-core-targets INCLUDES DESTINATION include)
+install(DIRECTORY include/drjit-core DESTINATION include)
+install(FILES drjit-core-config.cmake DESTINATION lib/cmake/drjit-core)
+install(
+  EXPORT drjit-core-targets
+  FILE drjit-core-targets.cmake
+  DESTINATION lib/cmake/drjit-core)
